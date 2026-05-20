@@ -1,0 +1,6 @@
+# Legacy BIOS PXE fallback — not actively used (all nodes are UEFI)
+# Default: chainload to local disk
+DEFAULT local
+
+LABEL local
+  LOCALBOOT 0

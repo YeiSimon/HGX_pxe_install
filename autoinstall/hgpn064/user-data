@@ -1,0 +1,229 @@
+#cloud-config
+autoinstall:
+  version: 1
+  refresh-installer:
+    update: false
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  identity:
+    hostname: hgpn064
+    username: user
+    password: ""
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys:
+      - ssh-ed25519 <JUMP01_ED25519_PUBKEY> root@jump01
+      - ssh-rsa <AIDCVM_RSA_PUBKEY> aidcvm
+      - ssh-rsa <ASUS_RSA_PUBKEY> ASUS
+  network:
+    version: 2
+    ethernets:
+      eno1np0:
+        dhcp4: false
+        addresses:
+          - 10.2.1.64/24
+      ens255f0np0:
+        dhcp4: false
+        optional: true
+      ens255f1np1:
+        dhcp4: false
+        optional: true
+      ens3f0np0:
+        dhcp4: false
+        optional: true
+      ens3f1np1:
+        dhcp4: false
+        optional: true
+    bonds:
+      bond0:
+        interfaces:
+          - ens255f0np0
+          - ens3f0np0
+        addresses:
+          - 10.2.183.64/24
+        nameservers:
+          addresses:
+            - 10.2.2.141
+            - 10.2.2.142
+        routes:
+          - to: default
+            via: 10.2.183.254
+        parameters:
+          mode: 802.3ad
+          transmit-hash-policy: layer3+4
+          mii-monitor-interval: 100
+      bond1:
+        interfaces:
+          - ens255f1np1
+          - ens3f1np1
+        addresses:
+          - 10.2.3.64/24
+        parameters:
+          mode: 802.3ad
+          transmit-hash-policy: layer3+4
+          mii-monitor-interval: 100
+  storage:
+    config:
+      - id: disk-sda
+        type: disk
+        path: /dev/sda
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-sdb
+        type: disk
+        path: /dev/sdb
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme6
+        type: disk
+        path: /dev/nvme6n1
+        ptable: gpt
+        wipe: superblock-recursive
+        preserve: false
+        grub_device: true
+      - id: disk-nvme8
+        type: disk
+        path: /dev/nvme8n1
+        ptable: gpt
+        wipe: superblock-recursive
+        preserve: false
+        grub_device: false
+      - id: nvme6-efi
+        type: partition
+        device: disk-nvme6
+        size: 1G
+        flag: boot
+        grub_device: true
+        wipe: superblock
+        preserve: false
+      - id: nvme8-efi
+        type: partition
+        device: disk-nvme8
+        size: 1G
+        flag: boot
+        wipe: superblock
+        preserve: false
+      - id: nvme6-root
+        type: partition
+        device: disk-nvme6
+        size: -1
+        flag: raid
+        wipe: superblock
+        preserve: false
+      - id: nvme8-root
+        type: partition
+        device: disk-nvme8
+        size: -1
+        flag: raid
+        wipe: superblock
+        preserve: false
+      - id: format-efi
+        type: format
+        volume: nvme6-efi
+        fstype: fat32
+        preserve: false
+      - id: format-efi-nvme8
+        type: format
+        volume: nvme8-efi
+        fstype: fat32
+        preserve: false
+      - id: mount-efi
+        type: mount
+        device: format-efi
+        path: /boot/efi
+      - id: raid-md0
+        type: raid
+        name: md0
+        raidlevel: 1
+        devices:
+          - nvme6-root
+          - nvme8-root
+        preserve: false
+      - id: format-md0
+        type: format
+        volume: raid-md0
+        fstype: xfs
+        preserve: false
+      - id: mount-root
+        type: mount
+        device: format-md0
+        path: /
+      - id: disk-nvme0
+        type: disk
+        path: /dev/nvme0n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme1
+        type: disk
+        path: /dev/nvme1n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme2
+        type: disk
+        path: /dev/nvme2n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme3
+        type: disk
+        path: /dev/nvme3n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme4
+        type: disk
+        path: /dev/nvme4n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme5
+        type: disk
+        path: /dev/nvme5n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme7
+        type: disk
+        path: /dev/nvme7n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: disk-nvme9
+        type: disk
+        path: /dev/nvme9n1
+        wipe: superblock-recursive
+        preserve: false
+      - id: raid-md1
+        type: raid
+        name: md1
+        raidlevel: 6
+        devices:
+          - disk-nvme0
+          - disk-nvme1
+          - disk-nvme2
+          - disk-nvme3
+          - disk-nvme4
+          - disk-nvme5
+          - disk-nvme7
+          - disk-nvme9
+        preserve: false
+      - id: format-md1
+        type: format
+        volume: raid-md1
+        fstype: xfs
+        preserve: false
+      - id: mount-data
+        type: mount
+        device: format-md1
+        path: /data
+  packages:
+    - mdadm
+    - xfsprogs
+  late-commands:
+    - curtin in-target --target=/target -- systemctl enable ssh
+    - mkdir -p /target/home/user/.ssh
+    - chmod 700 /target/home/user/.ssh
+    - echo "ssh-ed25519 <JUMP01_ED25519_PUBKEY> root@jump01" >> /target/home/user/.ssh/authorized_keys
+    - echo "ssh-rsa <AIDCVM_RSA_PUBKEY> aidcvm" >> /target/home/user/.ssh/authorized_keys
+    - echo "ssh-rsa <ASUS_RSA_PUBKEY> ASUS" >> /target/home/user/.ssh/authorized_keys
+    - chown -R 1000:1000 /target/home/user/.ssh
+    - chmod 600 /target/home/user/.ssh/authorized_keys
+    - passwd -l root
+  shutdown: reboot
