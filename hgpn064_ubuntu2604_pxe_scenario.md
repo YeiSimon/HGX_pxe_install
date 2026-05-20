@@ -168,7 +168,7 @@ Do not store the plaintext OS password in this file.
 
 ## Network Plan
 
-`eno1`:
+`eno1np0` (PXE/mgmt NIC):
 
 ```text
 address: 10.2.1.64/24
@@ -177,7 +177,7 @@ address: 10.2.1.64/24
 `bond0`:
 
 ```text
-slaves: enp42s0f0np0, ens3f0np0
+slaves: ens255f0np0, ens3f0np0
 mode: 802.3ad
 hash policy: layer3+4
 address: 10.2.183.64/24
@@ -188,19 +188,21 @@ DNS: 10.2.2.141, 10.2.2.142
 `bond1`:
 
 ```text
-slaves: enp42s0f1np1, ens3f1np1
+slaves: ens255f1np1, ens3f1np1
 mode: 802.3ad
 hash policy: layer3+4
 address: 10.2.3.64/24
 ```
 
+Note: NIC names verified from `ip -brief addr` on live installer. Initial assumptions used wrong names.
+
 ## Storage Plan
 
-Boot/root disks:
+Boot/root disks (verified from live installer `lsblk`):
 
 ```text
-/dev/nvme2n1  1.7T
-/dev/nvme3n1  1.7T
+/dev/nvme6n1  1.7T  ← grub_device, EFI + RAID1 root
+/dev/nvme8n1  1.7T  ← EFI + RAID1 root
 ```
 
 Root RAID:
@@ -212,16 +214,16 @@ filesystem: xfs
 mountpoint: /
 ```
 
-Data disks:
+Data disks (verified from live installer `lsblk`):
 
 ```text
 /dev/nvme0n1  3.5T
 /dev/nvme1n1  3.5T
+/dev/nvme2n1  3.5T
+/dev/nvme3n1  3.5T
 /dev/nvme4n1  3.5T
 /dev/nvme5n1  3.5T
-/dev/nvme6n1  3.5T
 /dev/nvme7n1  3.5T
-/dev/nvme8n1  3.5T
 /dev/nvme9n1  3.5T
 ```
 
@@ -233,6 +235,17 @@ RAID6
 filesystem: xfs
 mountpoint: /data
 ```
+
+Also wiped during install (contained old OS):
+
+```text
+/dev/sda  57.3G  ← old OS root (ext4), wiped
+/dev/sdb  28.7G  ← wiped
+```
+
+Important: NVMe device names are assigned by kernel PCIe enumeration order and
+may differ from expectations. Always verify with `lsblk` from the live installer
+before writing the storage config.
 
 Packages requested in autoinstall:
 
@@ -262,7 +275,12 @@ BMC/IPMI note:
 ssh jump01 'ipmitool -I lanplus -H 10.2.255.64 -U admin -P "<BMC_PASSWORD>" chassis status'
 ```
 
-In this run, the BMC responded to ping and HTTPS, but IPMI RMCP+ rejected the session. Redfish service root was reachable, but authenticated Redfish system endpoints returned access denied with this account.
+IPMI RMCP+ works with the admin account. Use this to force PXE boot:
+
+```bash
+ssh jump01 'ipmitool -I lanplus -H 10.2.255.64 -U admin -P "<BMC_PASSWORD>" chassis bootdev pxe options=efiboot'
+ssh jump01 'ipmitool -I lanplus -H 10.2.255.64 -U admin -P "<BMC_PASSWORD>" chassis power reset'
+```
 
 ## Observed Successful PXE Handoff
 
@@ -299,16 +317,27 @@ Those are normal for this NoCloud seed layout because network config is embedded
 
 ## Current Last Known State
 
-At the time this scenario was written:
+Installation completed successfully on 2026-05-20.
 
-- PXE handoff completed.
-- Ubuntu live installer fetched kernel, initrd, ISO, `meta-data`, and `user-data`.
-- SSH was open on:
-  - `10.2.1.64`
-  - `10.2.183.64`
-  - `10.2.3.64`
-- The same SSH host key appeared on all three addresses, consistent with the live installer after applying the configured network.
-- Password authentication for final user `user` was not accepted yet, so the node likely had not rebooted into the final installed OS at that moment.
+- hostname: `hgpn064`
+- OS: Ubuntu 26.04 LTS, kernel `7.0.0-14-generic`
+- `eno1np0`: `10.2.1.64/24`
+- `bond0`: `10.2.183.64/24`
+- `bond1`: `10.2.3.64/24`
+- `md0`: RAID1 on `nvme6n1p2` + `nvme8n1p2` → xfs → `/`
+- `md1`: RAID6 on 8x 3.5T NVMe → xfs → `/data`
+- SSH access: `ssh user@10.2.183.64` works from jump01 (no `-i` flag needed)
+- Root account locked (`passwd -l root`)
+
+## Known Issues and Fixes Applied
+
+| Issue | Root Cause | Fix |
+|---|---|---|
+| Bootloader partition error | `grub_device: true` was on disk only; subiquity UEFI check requires it on the EFI **partition** | Added `grub_device: true` to `nvme6-efi` partition |
+| Wrong NVMe paths | Kernel PCIe enumeration assigned different numbers than expected | Verified with `lsblk` from live installer; boot=nvme6/nvme8, data=nvme0-5,7,9 |
+| Old kernel panic on boot | Old OS was on `/dev/sda` (SATA); UEFI was still booting it | Added `wipe: superblock-recursive` on sda/sdb in storage config |
+| SSH key not working after install | jump01 defaults to `id_rsa` but only `DFT` (ed25519) was added | Added `id_rsa.pub` (ASUS key) to both `ssh.authorized-keys` and `late-commands` |
+| Subiquity config cache | `cloud.autoinstall.yaml` kept reverting to old config on restart | Used `/autoinstall.yaml` which takes priority over cloud cache |
 
 ## Monitor Commands
 
