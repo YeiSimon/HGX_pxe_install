@@ -92,7 +92,7 @@ set timeout=5
 set default=0
 
 menuentry 'Autoinstall Ubuntu Server 26.04 LTS on hgpn064' {
-  linuxefi /ubuntu-26.04-amd64/vmlinuz ip=dhcp url=http://10.2.1.171/ubuntu/26.04/ubuntu-26.04-live-server-amd64.iso autoinstall ds=nocloud-net\;s=http://10.2.1.171/autoinstall/hgpn064/ ---
+  linuxefi /ubuntu-26.04-amd64/vmlinuz ip=dhcp url=http://10.2.1.171/ubuntu/26.04/ubuntu-26.04-live-server-amd64.iso autoinstall ds=nocloud-net\;s=http://10.2.1.171/autoinstall/hgpn064/ modprobe.blacklist=nouveau nouveau.modeset=0 ---
   initrdefi /ubuntu-26.04-amd64/initrd
 }
 ```
@@ -338,6 +338,58 @@ Installation completed successfully on 2026-05-20.
 | Old kernel panic on boot | Old OS was on `/dev/sda` (SATA); UEFI was still booting it | Added `wipe: superblock-recursive` on sda/sdb in storage config |
 | SSH key not working after install | jump01 defaults to `id_rsa` but only `DFT` (ed25519) was added | Added `id_rsa.pub` (ASUS key) to both `ssh.authorized-keys` and `late-commands` |
 | Subiquity config cache | `cloud.autoinstall.yaml` kept reverting to old config on restart | Used `/autoinstall.yaml` which takes priority over cloud cache |
+
+## Nouveau GPU Driver Blacklist
+
+HGX nodes carry NVIDIA GPUs. The nouveau open-source driver must be suppressed so it does not
+conflict with the proprietary NVIDIA driver installed after OS setup.
+
+### 1 — Live installer kernel cmdline (grub.cfg)
+
+Already applied in the GRUB config above. Prevents nouveau from loading during the install itself:
+
+```text
+modprobe.blacklist=nouveau nouveau.modeset=0
+```
+
+### 2 — Persistent blacklist in the installed OS (late-commands)
+
+Add to `late-commands` in `user-data` on `aidcvm`:
+
+```yaml
+late-commands:
+  - echo "blacklist nouveau" > /target/etc/modprobe.d/blacklist-nouveau.conf
+  - echo "options nouveau modeset=0" >> /target/etc/modprobe.d/blacklist-nouveau.conf
+```
+
+This creates `/etc/modprobe.d/blacklist-nouveau.conf` in the target root with:
+
+```text
+blacklist nouveau
+options nouveau modeset=0
+```
+
+Apply on PXE server:
+
+```bash
+ssh jump01 'ssh root@10.2.1.171 "cat >> /var/www/html/autoinstall/hgpn064/user-data"' << 'EOF'
+        - echo "blacklist nouveau" > /target/etc/modprobe.d/blacklist-nouveau.conf
+        - echo "options nouveau modeset=0" >> /target/etc/modprobe.d/blacklist-nouveau.conf
+EOF
+```
+
+Verify after install:
+
+```bash
+ssh user@10.2.183.64 'cat /etc/modprobe.d/blacklist-nouveau.conf'
+```
+
+Expected:
+
+```text
+blacklist nouveau
+options nouveau modeset=0
+```
 
 ## Monitor Commands
 
